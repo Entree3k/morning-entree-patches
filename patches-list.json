@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
+  "version": "1.0.0",
   "patches": [
     {
       "name": "Add ability to copy media link",
@@ -515,6 +515,18 @@
       ],
       "compatiblePackages": {
         "com.twitter.android": null
+      },
+      "options": []
+    },
+    {
+      "name": "Enable Premium",
+      "description": "Enables app features locked behind the subscription paywall.",
+      "use": true,
+      "dependencies": [],
+      "compatiblePackages": {
+        "com.simyasolutions.ling.universal": [
+          "8.1.0"
+        ]
       },
       "options": []
     },
