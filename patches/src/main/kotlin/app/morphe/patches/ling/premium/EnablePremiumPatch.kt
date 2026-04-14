@@ -5,6 +5,8 @@ import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.patches.ling.premium.LingConstants.COMPATIBILITY_LING
+import app.morphe.util.cloneMutable
+import app.morphe.util.numberOfParameterRegistersLogical
 
 @Suppress("unused")
 val enablePremiumPatch = bytecodePatch(
@@ -14,75 +16,102 @@ val enablePremiumPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_LING)
 
     execute {
-        GetAvailableItemsByTypeFingerprint.method.apply {
-            addInstructionsWithLabels(
-                0,
-                """
-                    const-string v0, "subs"
-                    invoke-virtual {p1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
-                    move-result v0
-                    if-eqz v0, :original
-
-                    invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createArray()Lcom/facebook/react/bridge/WritableArray;
-                    move-result-object v0
-
-                    invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createMap()Lcom/facebook/react/bridge/WritableMap;
-                    move-result-object v1
-
-                    const-string v2, "productId"
-                    const-string v3, "ling_premium_yearly"
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-                    invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createArray()Lcom/facebook/react/bridge/WritableArray;
-                    move-result-object v2
-                    const-string v3, "ling_premium_yearly"
-                    invoke-interface {v2, v3}, Lcom/facebook/react/bridge/WritableArray;->pushString(Ljava/lang/String;)V
-                    const-string v3, "productIds"
-                    check-cast v2, Lcom/facebook/react/bridge/ReadableArray;
-                    invoke-interface {v1, v3, v2}, Lcom/facebook/react/bridge/WritableMap;->putArray(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableArray;)V
-
-                    const-string v2, "transactionId"
-                    const-string v3, "GPA.0000-0000-0000-00000"
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-                    const-string v2, "transactionDate"
-                    invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
-                    move-result-wide v3
-                    long-to-double v3, v3
-                    invoke-interface {v1, v2, v3, v4}, Lcom/facebook/react/bridge/WritableMap;->putDouble(Ljava/lang/String;D)V
-
-                    const-string v2, "transactionReceipt"
-                    const-string v3, "{\"orderId\":\"GPA.0000-0000-0000-00000\",\"packageName\":\"com.simyasolutions.ling.universal\",\"productId\":\"ling_premium_yearly\",\"purchaseTime\":0,\"purchaseState\":0,\"purchaseToken\":\"morphe-premium-token\",\"acknowledged\":true}"
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-                    const-string v2, "orderId"
-                    const-string v3, "GPA.0000-0000-0000-00000"
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-                    const-string v2, "purchaseToken"
-                    const-string v3, "morphe-premium-token"
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-                    const-string v2, "purchaseStateAndroid"
-                    const/4 v3, 0x1
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putInt(Ljava/lang/String;I)V
-
-                    const-string v2, "isAcknowledgedAndroid"
-                    const/4 v3, 0x1
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putBoolean(Ljava/lang/String;Z)V
-
-                    const-string v2, "autoRenewingAndroid"
-                    const/4 v3, 0x1
-                    invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putBoolean(Ljava/lang/String;Z)V
-
-                    check-cast v1, Lcom/facebook/react/bridge/ReadableMap;
-                    invoke-interface {v0, v1}, Lcom/facebook/react/bridge/WritableArray;->pushMap(Lcom/facebook/react/bridge/ReadableMap;)V
-
-                    invoke-interface {p2, v0}, Lcom/facebook/react/bridge/Promise;->resolve(Ljava/lang/Object;)V
-                    return-void
-                """.trimIndent(),
-                ExternalLabel("original", getInstruction(0)),
-            )
+        // getAvailableItemsByType ships with `.locals 1`, giving us only v0 as a
+        // real local. The injected body needs v0..v4 (v4 holds the high half of
+        // a wide double), so we must widen the register frame before inserting.
+        //
+        // cloneMutable(additionalRegisters = 4) bumps the register count by 4 and
+        // prepends `move-object/from16 vN, pN` moves that preserve the original
+        // parameters into the new low locals v1, v2, v3. After those moves:
+        //   v0      = original local (free)
+        //   v1      = preserved `this`     (we overwrite — branch returns early)
+        //   v2      = preserved String type (we overwrite — branch returns early)
+        //   v3      = preserved Promise    (we overwrite — branch returns early)
+        //   v4      = fresh local (free)
+        //   p0/p1/p2 alias to the new high registers and still resolve correctly.
+        val originalMethod = GetAvailableItemsByTypeFingerprint.method
+        val mutableClass = mutableClassDefBy(originalMethod.definingClass)
+        val mutableMethod = originalMethod.cloneMutable(additionalRegisters = 4)
+        mutableClass.methods.apply {
+            remove(originalMethod)
+            add(mutableMethod)
         }
+
+        // The preservation moves occupy the first numberOfParameterRegistersLogical
+        // slots (3: `this`, type, promise). Our code goes right after them, and
+        // the :original fallthrough branch jumps over our block into what was the
+        // first instruction of the original body — bypassing our overwrites of
+        // v1..v3 when the caller did not ask for "subs".
+        val insertPos = originalMethod.numberOfParameterRegistersLogical
+        val firstOriginalInstr = mutableMethod.getInstruction(insertPos)
+
+        mutableMethod.addInstructionsWithLabels(
+            insertPos,
+            """
+                const-string v0, "subs"
+                invoke-virtual {p1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+                move-result v0
+                if-eqz v0, :original
+
+                invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createArray()Lcom/facebook/react/bridge/WritableArray;
+                move-result-object v0
+
+                invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createMap()Lcom/facebook/react/bridge/WritableMap;
+                move-result-object v1
+
+                const-string v2, "productId"
+                const-string v3, "ling_premium_yearly"
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+                invoke-static {}, Lcom/facebook/react/bridge/Arguments;->createArray()Lcom/facebook/react/bridge/WritableArray;
+                move-result-object v2
+                const-string v3, "ling_premium_yearly"
+                invoke-interface {v2, v3}, Lcom/facebook/react/bridge/WritableArray;->pushString(Ljava/lang/String;)V
+                const-string v3, "productIds"
+                check-cast v2, Lcom/facebook/react/bridge/ReadableArray;
+                invoke-interface {v1, v3, v2}, Lcom/facebook/react/bridge/WritableMap;->putArray(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableArray;)V
+
+                const-string v2, "transactionId"
+                const-string v3, "GPA.0000-0000-0000-00000"
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+                const-string v2, "transactionDate"
+                invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+                move-result-wide v3
+                long-to-double v3, v3
+                invoke-interface {v1, v2, v3, v4}, Lcom/facebook/react/bridge/WritableMap;->putDouble(Ljava/lang/String;D)V
+
+                const-string v2, "transactionReceipt"
+                const-string v3, "{\"orderId\":\"GPA.0000-0000-0000-00000\",\"packageName\":\"com.simyasolutions.ling.universal\",\"productId\":\"ling_premium_yearly\",\"purchaseTime\":0,\"purchaseState\":0,\"purchaseToken\":\"morphe-premium-token\",\"acknowledged\":true}"
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+                const-string v2, "orderId"
+                const-string v3, "GPA.0000-0000-0000-00000"
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+                const-string v2, "purchaseToken"
+                const-string v3, "morphe-premium-token"
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+                const-string v2, "purchaseStateAndroid"
+                const/4 v3, 0x1
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putInt(Ljava/lang/String;I)V
+
+                const-string v2, "isAcknowledgedAndroid"
+                const/4 v3, 0x1
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putBoolean(Ljava/lang/String;Z)V
+
+                const-string v2, "autoRenewingAndroid"
+                const/4 v3, 0x1
+                invoke-interface {v1, v2, v3}, Lcom/facebook/react/bridge/WritableMap;->putBoolean(Ljava/lang/String;Z)V
+
+                check-cast v1, Lcom/facebook/react/bridge/ReadableMap;
+                invoke-interface {v0, v1}, Lcom/facebook/react/bridge/WritableArray;->pushMap(Lcom/facebook/react/bridge/ReadableMap;)V
+
+                invoke-interface {p2, v0}, Lcom/facebook/react/bridge/Promise;->resolve(Ljava/lang/Object;)V
+                return-void
+            """.trimIndent(),
+            ExternalLabel("original", firstOriginalInstr),
+        )
     }
 }
