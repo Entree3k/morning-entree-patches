@@ -1246,6 +1246,18 @@
       "options": []
     },
     {
+      "name": "Unlock Symfonium",
+      "description": "Unlocks the trial version of Symfonium.",
+      "use": true,
+      "dependencies": [],
+      "compatiblePackages": {
+        "app.symfonik.music.player": [
+          "14.0.0"
+        ]
+      },
+      "options": []
+    },
+    {
       "name": "Unlock developer options",
       "description": null,
       "use": true,
