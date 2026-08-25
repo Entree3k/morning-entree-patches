@@ -3,6 +3,10 @@ package morningentree.morphe.patches.google.gboard.tracking
 import app.morphe.patcher.patch.booleanOption
 import app.morphe.patcher.patch.bytecodePatch
 import morningentree.morphe.patches.google.gboard.shared.COMPATIBILITY_GBOARD
+import morningentree.morphe.patches.shared.misc.hosts.DEFAULT_REDIRECTION_IP
+import morningentree.morphe.patches.shared.misc.hosts.HostsBlocker
+import morningentree.morphe.patches.shared.misc.hosts.HostsBlockerConfig
+import morningentree.morphe.patches.shared.misc.hosts.baseHostsBlockerPatch
 
 @Suppress("unused")
 val blockTrackingPatch = bytecodePatch(

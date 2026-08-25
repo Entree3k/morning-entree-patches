@@ -2,7 +2,7 @@ package morningentree.morphe.patches.all.misc.tracking
 
 /**
  * Built-in blocklist for [blockTrackingHostsPatch]. Parsed by
- * [morningentree.morphe.patches.google.gboard.tracking.HostsBlocker.fromString]:
+ * [morningentree.morphe.patches.shared.misc.hosts.HostsBlocker.fromString]:
  * `#` comments and blank lines are ignored, entries are de-duplicated, and — when the patch's
  * "Wildcard blocking" option is on (the default) — an apex entry such as `mixpanel.com` also
  * blocks its subdomains (`api.mixpanel.com`, …).
