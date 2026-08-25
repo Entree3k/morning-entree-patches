@@ -11,8 +11,7 @@ import morningentree.morphe.patches.shared.misc.hosts.baseHostsBlockerPatch
 @Suppress("unused")
 val blockTrackingPatch = bytecodePatch(
     name = "Block tracking and analytics",
-    description = "Redirects Gboard's known tracking, analytics, and ad host literals to 0.0.0.0 " +
-        "using a built-in blocklist. Note: telemetry sent through Google Play Services is not " +
+    description = "Redirects Gboard's known tracking, analytics, and ad host to 0.0.0.0. Note: telemetry sent through Google Play Services is not " +
         "affected; use the always-incognito patch for that.",
     default = false,
 ) {
